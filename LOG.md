@@ -21,4 +21,4 @@ uv add pyecharts
 uv add transformers
 ```
 
-On `uv run zoo/classic_control/cartpole/config/cartpole_muzero_config.py` I saw a speedup from 244s to 57s
+On `uv run LightZero/zoo/classic_control/cartpole/config/cartpole_muzero_config.py` I saw a speedup from 244s to 57s
