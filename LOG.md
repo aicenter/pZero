@@ -7,11 +7,11 @@ Via uv install:
 ```bash
 uv venv
 source .venv/bin/activate
+uv init
 uv add --editable ./LightZero
-uv add --editable ./Minigrid
+# uv add --editable ./Minigrid
 ```
 
-Note that I had to change LightZero/requiremnts.txt because of Minigrid, changing gymnasium from 2.8.0 to 2.8.1
 
 Also installed:
 
@@ -22,3 +22,8 @@ uv add transformers
 ```
 
 On `uv run LightZero/zoo/classic_control/cartpole/config/cartpole_muzero_config.py` I saw a speedup from 244s to 57s
+
+## Tools and such
+
+- VS code offered to install tensorboard plugin, after installing `uv add torchvision` it loaded all logs and run within VS code. Neat!
+- Code navigation (go to definition (F12)) was not working with lightzero functions (installed as editable from local directory). There was an easy fix, going to settings and changing python.languageServer to Jedi. This fixed it.

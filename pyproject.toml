@@ -1,5 +1,5 @@
 [project]
-name = "tzero"
+name = "test"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,6 +9,7 @@ dependencies = [
     "minigrid",
     "numba>=0.61.2",
     "pyecharts>=2.0.8",
+    "torchvision>=0.22.0",
     "transformers>=4.51.3",
 ]
 
