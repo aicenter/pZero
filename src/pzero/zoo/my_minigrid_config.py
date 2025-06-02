@@ -1,8 +1,9 @@
 from easydict import EasyDict
+# from pzero.zoo.minigrid_pzero_env import MiniGridEnvLightZero
 
 # The typical MiniGrid env id: {'MiniGrid-Empty-8x8-v0', 'MiniGrid-FourRooms-v0', 'MiniGrid-DoorKey-8x8-v0','MiniGrid-DoorKey-16x16-v0'},
 # please refer to https://github.com/Farama-Foundation/MiniGrid for details.
-env_id = 'MiniGrid-Empty-8x8-v0'
+env_id = 'MiniGrid-Empty-5x5-v0'
 max_env_step = int(1e6)
 
 # ==============================================================
@@ -12,11 +13,11 @@ seed = 0
 collector_env_num = 8
 n_episode = 8
 evaluator_env_num = 3
-num_simulations = 50
-update_per_collect = 200
-batch_size = 256
-reanalyze_ratio = 0
-td_steps = 5
+num_simulations = 50 # Number of MCTS simulations
+update_per_collect = 200 # Number of updates on NNs for each batch of data
+batch_size = 256 # number of positions from each batch of data for ?one update?
+reanalyze_ratio = 0 # Reanalyze ratio
+td_steps = 5 # how many steps to unroll to calculate the target value of a position
 policy_entropy_weight = 0.  # 0.005
 threshold_training_steps_for_final_temperature = int(5e5)
 eps_greedy_exploration_in_collect = False
@@ -36,10 +37,14 @@ minigrid_muzero_config = dict(
         evaluator_env_num=evaluator_env_num,
         n_evaluator_episode=evaluator_env_num,
         manager=dict(shared_memory=False, ),
+        # (bool) If True, save the replay as a gif file.
+        save_replay_gif=True,
+        # (str or None) The path to save the replay gif. If None, the replay gif will not be saved.
+        replay_path_gif='./data_muzero/gifs/',
     ),
     policy=dict(
         model=dict(
-            observation_shape=2835,
+            observation_shape=2835, # should be a number of value sin the flattened observation. 
             action_space_size=7,
             model_type='mlp',
             lstm_hidden_size=256,
@@ -80,8 +85,8 @@ main_config = minigrid_muzero_config
 
 minigrid_muzero_create_config = dict(
     env=dict(
-        type='minigrid_lightzero',
-        import_names=['zoo.minigrid.envs.minigrid_lightzero_env'],
+        type='minigrid_pzero',
+        import_names=['pzero.zoo.minigrid_pzero_env'],
     ),
     env_manager=dict(type='subprocess'),
     policy=dict(

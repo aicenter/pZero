@@ -1,7 +1,7 @@
 [project]
-name = "test"
+name = "pzero"
 version = "0.1.0"
-description = "Add your description here"
+description = "Adapting SLAM-MuZero for POMDPs"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "minigrid",
     "numba>=0.61.2",
     "pyecharts>=2.0.8",
+    "tensorflow>=2.18.1",
     "torchvision>=0.22.0",
     "transformers>=4.51.3",
 ]
@@ -16,3 +17,6 @@ dependencies = [
 [tool.uv.sources]
 lightzero = { path = "LightZero", editable = true }
 minigrid = { path = "Minigrid", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]

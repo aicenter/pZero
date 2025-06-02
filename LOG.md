@@ -10,6 +10,8 @@ source .venv/bin/activate
 uv init
 uv add --editable ./LightZero
 # uv add --editable ./Minigrid
+
+uv pip install -e . # install the project in the venv, so that e.g. environments can be imported
 ```
 
 

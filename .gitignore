@@ -1,9 +1,11 @@
 # Dependencies
-LightZero/
-Minigrid/
+# LightZero/
+# Minigrid/
 
 # Data
+data*/
 data_muzero/
+
 
 # IDE
 .idea/
