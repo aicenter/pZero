@@ -1,9 +1,12 @@
 from easydict import EasyDict
+import pzero.zoo.wallenv
 # from pzero.zoo.minigrid_pzero_env import MiniGridEnvLightZero
 
 # The typical MiniGrid env id: {'MiniGrid-Empty-8x8-v0', 'MiniGrid-FourRooms-v0', 'MiniGrid-DoorKey-8x8-v0','MiniGrid-DoorKey-16x16-v0'},
 # please refer to https://github.com/Farama-Foundation/MiniGrid for details.
-env_id = 'MiniGrid-Empty-5x5-v0'
+
+# env_id = 'MiniGrid-DoorKey-5x5-v0'
+env_id = 'MiniGrid-WallEnv-5x5-v0'
 max_env_step = int(1e6)
 
 # ==============================================================
@@ -26,7 +29,7 @@ eps_greedy_exploration_in_collect = False
 # ==============================================================
 
 minigrid_muzero_config = dict(
-    exp_name=f'data_muzero/{env_id}_muzero_ns{num_simulations}_upc{update_per_collect}_rer{reanalyze_ratio}_'
+    exp_name=f'data/slamuzero/{env_id}_slamuzero_ns{num_simulations}_upc{update_per_collect}_rer{reanalyze_ratio}_'
              f'collect-eps-{eps_greedy_exploration_in_collect}_temp-final-steps-{threshold_training_steps_for_final_temperature}_pelw{policy_entropy_weight}_seed{seed}',
     env=dict(
         stop_value=int(1e6),
@@ -40,7 +43,7 @@ minigrid_muzero_config = dict(
         # (bool) If True, save the replay as a gif file.
         save_replay_gif=True,
         # (str or None) The path to save the replay gif. If None, the replay gif will not be saved.
-        replay_path_gif='./data_muzero/gifs/',
+        replay_path_gif=f'./data/slamuzero/gifs/{env_id}/',
     ),
     policy=dict(
         model=dict(
@@ -90,8 +93,8 @@ minigrid_muzero_create_config = dict(
     ),
     env_manager=dict(type='subprocess'),
     policy=dict(
-        type='muzero',
-        import_names=['lzero.policy.muzero'],
+        type='slamuzero',
+        import_names=['pzero.slamuzero'],
     ),
     collector=dict(
         type='episode_muzero',
@@ -102,5 +105,5 @@ minigrid_muzero_create_config = EasyDict(minigrid_muzero_create_config)
 create_config = minigrid_muzero_create_config
 
 if __name__ == "__main__":
-    from lzero.entry import train_muzero
-    train_muzero([main_config, create_config], seed=seed, max_env_step=max_env_step)
+    from pzero.train_slamuzero import train_slamuzero
+    train_slamuzero([main_config, create_config], seed=seed, max_env_step=max_env_step)
