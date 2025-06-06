@@ -20,6 +20,15 @@ I set up tensorboard and I am looking at my metrics now. There are these tabs:
 - learner_step
 
 
+## MuZero
+
+### Consistency loss = Self-supervised learning loss
+In LightZero, unlike in the original paper, the MuZero has added the consistency loss to the loss function, that enforces agreement between two different pathways for obtaining latent state representations:
+- Dynamics Pathway: Latent states obtained by unrolling the dynamics network (predicting next states from current state + action)
+- Representation Pathway: Latent states obtained directly from the representation network (encoding future observations)
+
+In the config, the weight of the consistency loss is controlled by `ssl_loss_weight`.
+
 
 ## Minigrid
 
@@ -69,3 +78,4 @@ The direction field encodes the agent's orientation as an integer:
 
 
 
+## Prompts:
