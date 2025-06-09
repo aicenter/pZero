@@ -38,6 +38,7 @@ class MiniGridEnvPZero(MiniGridEnv):
         save_replay_gif=False,
         # (str or None) The path to save the replay gif. If None, the replay gif will not be saved.
         replay_path_gif=None,
+        view_size=3,
         flat_obs=True,
         # (int) The maximum number of steps for each episode.
         max_step=300,
@@ -67,6 +68,7 @@ class MiniGridEnvPZero(MiniGridEnv):
         self._init_flag = False
         self._env_id = cfg.env_id
         self._flat_obs = cfg.flat_obs
+        self._view_size = cfg.view_size
         self._save_replay_gif = cfg.save_replay_gif
         self._replay_path_gif = cfg.replay_path_gif
         self._max_step = cfg.max_step
@@ -88,12 +90,15 @@ class MiniGridEnvPZero(MiniGridEnv):
             # NOTE: customize the max step of the env
             self._env.max_steps = self._max_step
 
-            if self._env_id in ['MiniGrid-AKTDT-13x13-v0' or 'MiniGrid-AKTDT-13x13-1-v0']:
-                # customize the agent field of view size, note this must be an odd number
-                # This also related to the observation space, see gym_minigrid.wrappers for more details
-                self._env = ViewSizeWrapper(self._env, agent_view_size=5)
-            if self._env_id == 'MiniGrid-AKTDT-7x7-1-v0':
-                self._env = ViewSizeWrapper(self._env, agent_view_size=3)
+            # if self._env_id in ['MiniGrid-AKTDT-13x13-v0' or 'MiniGrid-AKTDT-13x13-1-v0']:
+            #     # customize the agent field of view size, note this must be an odd number
+            #     # This also related to the observation space, see gym_minigrid.wrappers for more details
+            #     self._env = ViewSizeWrapper(self._env, agent_view_size=5)
+            # if self._env_id == 'MiniGrid-AKTDT-7x7-1-v0':
+            #     self._env = ViewSizeWrapper(self._env, agent_view_size=3)
+
+            if self._view_size:
+                self._env = ViewSizeWrapper(self._env, agent_view_size=self._view_size)
             if self._flat_obs:
                 self._env = FlatObsWrapper(self._env)
                 # self._env = ImgObsWrapper(self._env)
@@ -102,7 +107,9 @@ class MiniGridEnvPZero(MiniGridEnv):
                 self._env = ObsPlusPrevActRewWrapper(self._env)
             self._init_flag = True
         if self._flat_obs:
-            self._observation_space = gym.spaces.Box(0, 1, shape=(2835, )) # hardcoded shape? 
+            # Get the actual observation space from the wrapped environment
+            # instead of using a hardcoded shape
+            self._observation_space = self._env.observation_space
         else:
             self._observation_space = self._env.observation_space
             # to be compatible with subprocess env manager

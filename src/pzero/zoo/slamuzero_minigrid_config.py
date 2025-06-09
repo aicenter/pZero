@@ -5,9 +5,28 @@ import pzero.zoo.wallenv
 # The typical MiniGrid env id: {'MiniGrid-Empty-8x8-v0', 'MiniGrid-FourRooms-v0', 'MiniGrid-DoorKey-8x8-v0','MiniGrid-DoorKey-16x16-v0'},
 # please refer to https://github.com/Farama-Foundation/MiniGrid for details.
 
+def calculate_observation_shape(view_size, maxStrLen=96, numCharCodes=28):
+    """
+    Calculate the observation shape for MiniGrid with FlatObsWrapper.
+    
+    Args:
+        view_size: Agent view size (must be odd, >= 3)
+        maxStrLen: Maximum mission string length (default: 96)
+        numCharCodes: Number of character codes (default: 28)
+    
+    Returns:
+        int: Total observation shape when flattened
+    """
+    # Image size: view_size x view_size x 3 channels
+    image_size = view_size * view_size * 3
+    # Mission string encoding size
+    mission_size = maxStrLen * numCharCodes
+    return image_size + mission_size
+
 # env_id = 'MiniGrid-DoorKey-5x5-v0'
 env_id = 'MiniGrid-WallEnv-5x5-v0'
 max_env_step = int(1e6)
+view_size = 3  # Agent view size - must be odd and >= 3
 
 # ==============================================================
 # begin of the most frequently changed config specified by the user
@@ -43,11 +62,13 @@ minigrid_muzero_config = dict(
         # (bool) If True, save the replay as a gif file.
         save_replay_gif=True,
         # (str or None) The path to save the replay gif. If None, the replay gif will not be saved.
-        replay_path_gif=f'./data/slamuzero/gifs/{env_id}/',
+        replay_path_gif=f'./{base_exp_path}/gifs/',
+        # MiniGrid specific: Agent view size
+        view_size=view_size,
     ),
     policy=dict(
         model=dict(
-            observation_shape=2835, # should be a number of value sin the flattened observation. 
+            observation_shape=calculate_observation_shape(view_size),
             action_space_size=7,
             model_type='mlp',
             lstm_hidden_size=256,
