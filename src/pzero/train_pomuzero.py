@@ -22,7 +22,7 @@ from lzero.worker import MuZeroEvaluator as Evaluator
 from lzero.entry.utils import random_collect, calculate_update_per_collect
 
 
-def train_slamuzero(
+def train_pomuzero(
         input_cfg: Tuple[dict, dict],
         seed: int = 0,
         model: Optional[torch.nn.Module] = None,
