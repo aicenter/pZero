@@ -14,7 +14,7 @@ from dizoo.minigrid.envs.minigrid_wrapper import ViewSizeWrapper
 from dizoo.minigrid.envs.minigrid_env import MiniGridEnv
 from easydict import EasyDict
 from matplotlib import animation
-from minigrid.wrappers import FlatObsWrapper
+from minigrid.wrappers import FlatObsWrapper, ImgObsWrapper
 
 
 @ENV_REGISTRY.register('minigrid_pzero')
@@ -27,19 +27,21 @@ class MiniGridEnvPZero(MiniGridEnv):
         _cfg (dict): Internal configuration dict that stores runtime configurations.
         _init_flag (bool): Flag to check if the environment is initialized.
         _env_id (str): The name of the MiniGrid environment.
-        _flat_obs (bool): Flag to check if flat observations are returned.
+        # _flat_obs (bool): Flag to check if flat observations are returned.
         _save_replay (bool): Flag to check if replays are saved.
         _max_step (int): Maximum number of steps for the environment.
     """
     config = dict(
         # (str) The gym environment name.
         env_id='MiniGrid-Empty-8x8-v0',
+        # (bool) Whether to use flat observation.
+        # _flat_obs=True,
         # (bool) If True, save the replay as a gif file.
         save_replay_gif=False,
         # (str or None) The path to save the replay gif. If None, the replay gif will not be saved.
         replay_path_gif=None,
         view_size=3,
-        flat_obs=True,
+        # flat_obs=True,
         # (int) The maximum number of steps for each episode.
         max_step=300,
     )
@@ -67,7 +69,7 @@ class MiniGridEnvPZero(MiniGridEnv):
         self._cfg = cfg
         self._init_flag = False
         self._env_id = cfg.env_id
-        self._flat_obs = cfg.flat_obs
+        # self._flat_obs = cfg.flat_obs
         self._view_size = cfg.view_size
         self._save_replay_gif = cfg.save_replay_gif
         self._replay_path_gif = cfg.replay_path_gif
@@ -99,24 +101,26 @@ class MiniGridEnvPZero(MiniGridEnv):
 
             if self._view_size:
                 self._env = ViewSizeWrapper(self._env, agent_view_size=self._view_size)
-            if self._flat_obs:
-                self._env = FlatObsWrapper(self._env)
-                # self._env = ImgObsWrapper(self._env)
+            # if self._flat_obs:
+            # self._env = FlatObsWrapper(self._env)
+            self._env = ImgObsWrapper(self._env)
                 # self._env = RGBImgPartialObsWrapper(self._env)
             if hasattr(self._cfg, 'obs_plus_prev_action_reward') and self._cfg.obs_plus_prev_action_reward:
                 self._env = ObsPlusPrevActRewWrapper(self._env)
             self._init_flag = True
-        if self._flat_obs:
-            # Get the actual observation space from the wrapped environment
-            # instead of using a hardcoded shape
-            self._observation_space = self._env.observation_space
+        # if self._flat_obs:
+        #     # Get the actual observation space from the wrapped environment
+        #     # instead of using a hardcoded shape
+        #     self._observation_space = self._env.observation_space
+        # else:
+        
+        self._observation_space = self._env.observation_space
+        # to be compatible with subprocess env manager
+        if isinstance(self._observation_space, gym.spaces.Dict):
+            self._observation_space['obs'].dtype = np.dtype('float32')
         else:
-            self._observation_space = self._env.observation_space
-            # to be compatible with subprocess env manager
-            if isinstance(self._observation_space, gym.spaces.Dict):
-                self._observation_space['obs'].dtype = np.dtype('float32')
-            else:
-                self._observation_space.dtype = np.dtype('float32')
+            self._observation_space.dtype = np.dtype('float32')
+
         self._action_space = self._env.action_space
         self._reward_space = gym.spaces.Box(
             low=self._env.reward_range[0], high=self._env.reward_range[1], shape=(1, ), dtype=np.float32
@@ -129,7 +133,14 @@ class MiniGridEnvPZero(MiniGridEnv):
             obs, _ = self._env.reset(seed=self._seed)
         else:
             obs, _ = self._env.reset()
-        obs = to_ndarray(obs)
+
+        print(f"obs shape: {obs.shape}, obs type: {type(obs)}, obs: {obs}")
+        # obs = to_ndarray(obs)
+        
+        # Flatten the 3 dimensional tensor into a single observation vector for MLP
+        obs = obs.flatten()  
+        print(f"obs shape ndarray: {obs.shape}, obs type: {type(obs)}, obs: {obs}")
+
         self._eval_episode_return = 0
         self._current_step = 0
         if self._save_replay_gif:
@@ -207,6 +218,10 @@ class MiniGridEnvPZero(MiniGridEnv):
 
         action_mask = np.ones(self.action_space.n, 'int8')
         self._timestep += 1
+
+        # Flatten the 3 dimensional tensor into a single observation vector for MLP
+        obs = obs.flatten()
+
         obs = {'observation': obs, 'action_mask': action_mask, 'to_play': -1, 'timestep': self._timestep}
 
         return BaseEnvTimestep(obs, rew, done, info)

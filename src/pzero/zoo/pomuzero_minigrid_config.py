@@ -29,7 +29,7 @@ eps_greedy_exploration_in_collect = False
 # ==============================================================
 
 # Common base path for experiment data
-base_data_path = 'data/pomuzero'
+base_data_path = 'data/pomuzero_test'
 exp_name = f'{base_data_path}/{env_id}_slamuzero_ns{num_simulations}_upc{update_per_collect}_rer{reanalyze_ratio}_' \
            f'collect-eps-{eps_greedy_exploration_in_collect}_temp-final-steps-{threshold_training_steps_for_final_temperature}_pelw{policy_entropy_weight}_seed{seed}'
 
@@ -51,7 +51,7 @@ minigrid_muzero_config = dict(
     ),
     policy=dict(
         model=dict(
-            observation_shape=2715, # should be a number of value sin the flattened observation. 
+            observation_shape=27, # should be a number of values in the flattened observation. 
             action_space_size=7,
             model_type='po_mlp',
             lstm_hidden_size=256,
