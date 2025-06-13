@@ -134,12 +134,13 @@ class MiniGridEnvPZero(MiniGridEnv):
         else:
             obs, _ = self._env.reset()
 
-        print(f"obs shape: {obs.shape}, obs type: {type(obs)}, obs: {obs}")
         # obs = to_ndarray(obs)
         
         # Flatten the 3 dimensional tensor into a single observation vector for MLP
         obs = obs.flatten()  
-        print(f"obs shape ndarray: {obs.shape}, obs type: {type(obs)}, obs: {obs}")
+        obs = obs.astype(np.float32)
+        
+        # print(f"obs shape ndarray: {obs.shape}, obs type: {type(obs)}, dtype: {obs.dtype}, obs: {obs}")
 
         self._eval_episode_return = 0
         self._current_step = 0
@@ -221,6 +222,7 @@ class MiniGridEnvPZero(MiniGridEnv):
 
         # Flatten the 3 dimensional tensor into a single observation vector for MLP
         obs = obs.flatten()
+        obs = obs.astype(np.float32)
 
         obs = {'observation': obs, 'action_mask': action_mask, 'to_play': -1, 'timestep': self._timestep}
 

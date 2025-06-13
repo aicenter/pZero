@@ -29,7 +29,7 @@ eps_greedy_exploration_in_collect = False
 # ==============================================================
 
 # Common base path for experiment data
-base_data_path = 'data/pomuzero_test'
+base_data_path = 'data/pomuzero'
 exp_name = f'{base_data_path}/{env_id}_slamuzero_ns{num_simulations}_upc{update_per_collect}_rer{reanalyze_ratio}_' \
            f'collect-eps-{eps_greedy_exploration_in_collect}_temp-final-steps-{threshold_training_steps_for_final_temperature}_pelw{policy_entropy_weight}_seed{seed}'
 
