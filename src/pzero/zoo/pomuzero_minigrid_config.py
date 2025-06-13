@@ -51,7 +51,7 @@ minigrid_muzero_config = dict(
     ),
     policy=dict(
         model=dict(
-            observation_shape=2835, # should be a number of value sin the flattened observation. 
+            observation_shape=2715, # should be a number of value sin the flattened observation. 
             action_space_size=7,
             model_type='po_mlp',
             lstm_hidden_size=256,
