@@ -16,6 +16,7 @@ from easydict import EasyDict
 from matplotlib import animation
 from minigrid.wrappers import FlatObsWrapper, ImgObsWrapper
 
+from PIL import Image, ImageDraw, ImageFont
 
 @ENV_REGISTRY.register('minigrid_pzero')
 class MiniGridEnvPZero(MiniGridEnv):
@@ -190,7 +191,10 @@ class MiniGridEnvPZero(MiniGridEnv):
         if isinstance(action, np.ndarray) and action.shape == (1, ):
             action = action.squeeze()  # 0-dim array
         if self._save_replay_gif:
-            self._frames.append(self._env.render())
+            img = self._env.render()
+            enriched_img = self.add_info_to_image(img, action)
+            self._frames.append(enriched_img)
+
         # using the step method of Gymnasium env, return is (observation, reward, terminated, truncated, info)
         obs, rew, terminated, truncated, info = self._env.step(action)
         done = terminated or truncated
@@ -245,6 +249,52 @@ class MiniGridEnvPZero(MiniGridEnv):
         self._save_replay = True
         self._replay_path = replay_path
         self._save_replay_count = 0
+
+    @staticmethod
+    def add_info_to_image(img: np.ndarray, action: int) -> np.ndarray:
+        """
+        Add action text to the corner of the rendered image.
+        
+        Args:
+            img: The original image as numpy array
+            action: The action index
+            
+        Returns:
+            Modified image with action text in the corner
+        """
+       
+        # Convert numpy array to PIL Image
+        img_pil = Image.fromarray(img)
+        draw = ImageDraw.Draw(img_pil)
+        
+        # Define action names for MiniGrid
+        action_names = ['left', 'right', 'forward', 'pickup', 'drop', 'toggle', 'done']
+        action_name = action_names[action] if action < len(action_names) else f'action_{action}'
+        action_text = f'Action: {action_name}'
+        
+        # Try to use a default font, fallback to default if not available
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except:
+            font = ImageFont.load_default()
+        
+        # Get text bounding box
+        bbox = draw.textbbox((0, 0), action_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        
+        # Add black background rectangle for better text visibility
+        padding = 5
+        draw.rectangle(
+            [(5, 5), (5 + text_width + 2*padding, 5 + text_height + 2*padding)], 
+            fill=(0, 0, 0)
+        )
+        
+        # Add the action text in white
+        draw.text((5 + padding, 5 + padding), action_text, fill=(255, 255, 255), font=font)
+        
+        # Convert back to numpy array
+        return np.array(img_pil)
 
     @staticmethod
     def display_frames_as_gif(frames: list, path: str) -> None:
