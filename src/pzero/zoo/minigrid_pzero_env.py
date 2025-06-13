@@ -268,7 +268,7 @@ class MiniGridEnvPZero(MiniGridEnv):
         draw = ImageDraw.Draw(img_pil)
         
         # Define action names for MiniGrid
-        action_names = ['left', 'right', 'forward', 'pickup', 'drop', 'toggle', 'done']
+        action_names = ['<', '>', '^', 'pickup', 'drop', 'toggle', 'done']
         action_name = action_names[action] if action < len(action_names) else f'action_{action}'
         action_text = f'Action: {action_name}'
         
