@@ -7,7 +7,7 @@ import pzero.zoo.wallenv
 
 # env_id = 'MiniGrid-DoorKey-5x5-v0'
 # env_id = 'MiniGrid-WallEnv-5x5-v0'
-env_id = 'MiniGrid-WallEnvReset-5x5-v0'
+env_id = 'MiniGrid-WallEnvReset-8x8-v0'
 max_env_step = int(1e6)
 
 # ==============================================================

@@ -143,6 +143,13 @@ register(
 )
 print("MiniGrid-WallEnvReset-5x5-v0")
 
+register(
+    id="MiniGrid-WallEnvReset-8x8-v0",
+    entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
+    kwargs={"size": 8},
+)
+print("MiniGrid-WallEnvReset-8x8-v0")
+
 if __name__ == "__main__":
     env = WallEnvReset()
     env.reset()
