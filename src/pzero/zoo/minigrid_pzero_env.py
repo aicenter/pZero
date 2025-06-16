@@ -87,11 +87,9 @@ class MiniGridEnvPZero(MiniGridEnv):
         """
         if not self._init_flag:
             if self._save_replay_gif:
-                self._env = gym.make(self._env_id, render_mode="rgb_array")
+                self._env = gym.make(self._env_id, render_mode="rgb_array", max_steps=self._max_step)
             else:
-                self._env = gym.make(self._env_id)
-            # NOTE: customize the max step of the env
-            self._env.max_steps = self._max_step
+                self._env = gym.make(self._env_id, max_steps=self._max_step)
 
             # if self._env_id in ['MiniGrid-AKTDT-13x13-v0' or 'MiniGrid-AKTDT-13x13-1-v0']:
             #     # customize the agent field of view size, note this must be an odd number
