@@ -144,6 +144,20 @@ register(
 print("MiniGrid-WallEnvReset-5x5-v0")
 
 register(
+    id="MiniGrid-WallEnvReset-6x6-v0",
+    entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
+    kwargs={"size": 6},
+)
+print("MiniGrid-WallEnvReset-6x6-v0")
+
+register(
+    id="MiniGrid-WallEnvReset-7x7-v0",
+    entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
+    kwargs={"size": 7},
+)
+print("MiniGrid-WallEnvReset-7x7-v0")
+
+register(
     id="MiniGrid-WallEnvReset-8x8-v0",
     entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
     kwargs={"size": 8},

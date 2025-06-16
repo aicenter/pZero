@@ -192,7 +192,7 @@ class MiniGridEnvPZero(MiniGridEnv):
             action = action.squeeze()  # 0-dim array
         if self._save_replay_gif:
             img = self._env.render()
-            enriched_img = self.add_info_to_image(img, action)
+            enriched_img = self.add_info_to_image(img, action, self._timestep)
             self._frames.append(enriched_img)
 
         # using the step method of Gymnasium env, return is (observation, reward, terminated, truncated, info)
@@ -251,16 +251,17 @@ class MiniGridEnvPZero(MiniGridEnv):
         self._save_replay_count = 0
 
     @staticmethod
-    def add_info_to_image(img: np.ndarray, action: int) -> np.ndarray:
+    def add_info_to_image(img: np.ndarray, action: int, timestep: int) -> np.ndarray:
         """
-        Add action text to the corner of the rendered image.
+        Add action text and timestep to the corner of the rendered image.
         
         Args:
             img: The original image as numpy array
             action: The action index
+            timestep: The current timestep number
             
         Returns:
-            Modified image with action text in the corner
+            Modified image with action text and timestep in the corner
         """
        
         # Convert numpy array to PIL Image
@@ -271,6 +272,7 @@ class MiniGridEnvPZero(MiniGridEnv):
         action_names = ['<', '>', '^', 'pickup', 'drop', 'toggle', 'done']
         action_name = action_names[action] if action < len(action_names) else f'action_{action}'
         action_text = f'Action: {action_name}'
+        timestep_text = f'ts: {timestep}'
         
         # Try to use a default font, fallback to default if not available
         try:
@@ -278,20 +280,43 @@ class MiniGridEnvPZero(MiniGridEnv):
         except:
             font = ImageFont.load_default()
         
-        # Get text bounding box
-        bbox = draw.textbbox((0, 0), action_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
+        # Get text bounding boxes
+        action_bbox = draw.textbbox((0, 0), action_text, font=font)
+        action_width = action_bbox[2] - action_bbox[0]
+        action_height = action_bbox[3] - action_bbox[1]
         
-        # Add black background rectangle for better text visibility
+        timestep_bbox = draw.textbbox((0, 0), timestep_text, font=font)
+        timestep_width = timestep_bbox[2] - timestep_bbox[0]
+        timestep_height = timestep_bbox[3] - timestep_bbox[1]
+        
+        img_width = img_pil.width
         padding = 5
+        
+        # Position action text in top left corner
+        action_x = padding
+        action_y = padding
+        
+        # Position timestep text in top right corner
+        timestep_x = img_width - timestep_width - padding
+        timestep_y = padding
+        
+        # Add black background rectangle for action text
         draw.rectangle(
-            [(5, 5), (5 + text_width + 2*padding, 5 + text_height + 2*padding)], 
+            [(action_x - padding, action_y - padding), (action_x + action_width + padding, action_y + action_height + padding)], 
             fill=(0, 0, 0)
         )
         
-        # Add the action text in white
-        draw.text((5 + padding, 5 + padding), action_text, fill=(255, 255, 255), font=font)
+        # Add black background rectangle for timestep text
+        draw.rectangle(
+            [(timestep_x - padding, timestep_y - padding), (timestep_x + timestep_width + padding, timestep_y + timestep_height + padding)], 
+            fill=(0, 0, 0)
+        )
+        
+        # Add the action text in white (top left)
+        draw.text((action_x, action_y), action_text, fill=(255, 255, 255), font=font)
+        
+        # Add the timestep text in white (top right)
+        draw.text((timestep_x, timestep_y), timestep_text, fill=(255, 255, 255), font=font)
         
         # Convert back to numpy array
         return np.array(img_pil)

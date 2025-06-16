@@ -7,7 +7,7 @@ import pzero.zoo.wallenv
 
 # env_id = 'MiniGrid-DoorKey-5x5-v0'
 # env_id = 'MiniGrid-WallEnv-5x5-v0'
-env_id = 'MiniGrid-WallEnvReset-5x5-v0'
+env_id = 'MiniGrid-WallEnvReset-6x6-v0'
 max_env_step = int(1e6)
 
 # ==============================================================
@@ -30,7 +30,7 @@ eps_greedy_exploration_in_collect = False
 # ==============================================================
 
 # Common base path for experiment data
-base_data_path = 'data/pomuzero_view3x3_reset-testing_graphs'
+base_data_path = 'data/pomuzero_view3x3_reset'
 exp_name = f'{base_data_path}/{env_id}_pomuzero_ns{num_simulations}_upc{update_per_collect}_rer{reanalyze_ratio}_' \
            f'collect-eps-{eps_greedy_exploration_in_collect}_temp-final-steps-{threshold_training_steps_for_final_temperature}_pelw{policy_entropy_weight}_seed{seed}'
 
