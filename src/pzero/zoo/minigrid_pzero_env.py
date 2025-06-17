@@ -88,7 +88,7 @@ class MiniGridEnvPZero(MiniGridEnv):
         """
         if not self._init_flag:
             if self._save_replay_gif:
-                self._env = gym.make(self._env_id, render_mode="rgb_array", max_steps=self._max_step)
+                self._env = gym.make(self._env_id, render_mode="rgb_array", max_steps=self._max_step, agent_view_size=self._view_size)
             else:
                 self._env = gym.make(self._env_id, max_steps=self._max_step)
 
@@ -99,8 +99,8 @@ class MiniGridEnvPZero(MiniGridEnv):
             # if self._env_id == 'MiniGrid-AKTDT-7x7-1-v0':
             #     self._env = ViewSizeWrapper(self._env, agent_view_size=3)
 
-            if self._view_size:
-                self._env = ViewSizeWrapper(self._env, agent_view_size=self._view_size)
+            # if self._view_size:
+                # self._env = ViewSizeWrapper(self._env, agent_view_size=self._view_size)
             # if self._flat_obs:
             # self._env = FlatObsWrapper(self._env)
             self._env = ImgObsWrapper(self._env)
