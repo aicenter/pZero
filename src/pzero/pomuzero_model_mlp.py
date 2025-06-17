@@ -224,9 +224,9 @@ class POMuZeroModelMLP(nn.Module):
     def _prediction(self, latent_state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Overview:
-            Use the representation network to encode the observations into latent state.
+            Use the prediction network to predict the value and policy given the current latent state.
         Arguments:
-            - obs (:obj:`torch.Tensor`): The 1D vector observation data.
+            - latent_state (:obj:`torch.Tensor`): The encoding latent state of input observation.
         Returns:
             - policy_logits (:obj:`torch.Tensor`): The output logit to select discrete action.
             - value (:obj:`torch.Tensor`): The output value of input state to help policy improvement and evaluation.
