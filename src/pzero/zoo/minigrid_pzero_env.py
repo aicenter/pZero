@@ -1,5 +1,6 @@
 import copy
 import os
+from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 
@@ -206,8 +207,7 @@ class MiniGridEnvPZero(MiniGridEnv):
             info['current_step'] = self._current_step
             info['max_step'] = self._max_step
             if self._save_replay_gif:
-                if not os.path.exists(self._replay_path_gif):
-                    os.makedirs(self._replay_path_gif)
+                Path(self._replay_path_gif).mkdir(parents=True, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
                 path = os.path.join(
                     self._replay_path_gif,
