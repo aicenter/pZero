@@ -1,6 +1,6 @@
 # pZero - an attempt at implementing MuZero for POMDPs
 
-See the report for the plan.
+See the [report](https://github.com/BoZenKhaa/pZero_report) for the plan.
 
 # Installation
 After failures with previous packages, I am using LightZero in this attempt, which is a framework that contains multiple implementations of MuZero, is actively maintained, documented and can be installed.
