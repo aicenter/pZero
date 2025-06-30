@@ -1,4 +1,5 @@
 import copy
+import logging
 import os
 from pathlib import Path
 from datetime import datetime
@@ -18,6 +19,9 @@ from matplotlib import animation
 from minigrid.wrappers import FlatObsWrapper, ImgObsWrapper
 
 from PIL import Image, ImageDraw, ImageFont
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 @ENV_REGISTRY.register('minigrid_pzero')
 class MiniGridEnvPZero(MiniGridEnv):
@@ -214,7 +218,7 @@ class MiniGridEnvPZero(MiniGridEnv):
                     '{}_episode_{}_seed{}_{}.gif'.format(self._env_id, self._save_replay_count, self._seed, timestamp)
                 )
                 self.display_frames_as_gif(self._frames, path)
-                print(f'save episode {self._save_replay_count} in {self._replay_path_gif}!')
+                logger.info(f'save episode {self._save_replay_count} in {self._replay_path_gif}!')
                 self._save_replay_count += 1
         obs = to_ndarray(obs)
         rew = to_ndarray(rew)  # wrapped to be transferred to an array with shape (1,)

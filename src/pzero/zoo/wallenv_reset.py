@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import logging
+from typing import Any, SupportsFloat
+
+import numpy as np
+from gymnasium.core import ActType, ObsType
 from minigrid.core.grid import Grid
 from minigrid.core.mission import MissionSpace
 from minigrid.core.world_object import Door, Goal, Key
 from minigrid.minigrid_env import MiniGridEnv
 
 from gymnasium.envs.registration import register
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 class WallEnvReset(MiniGridEnv):
 
@@ -197,28 +205,28 @@ register(
     entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
     kwargs={"size": 5},
 )
-print("MiniGrid-WallEnvReset-5x5-v0")
+logger.info("MiniGrid-WallEnvReset-5x5-v0")
 
 register(
     id="MiniGrid-WallEnvReset-6x6-v0",
     entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
     kwargs={"size": 6},
 )
-print("MiniGrid-WallEnvReset-6x6-v0")
+logger.info("MiniGrid-WallEnvReset-6x6-v0")
 
 register(
     id="MiniGrid-WallEnvReset-7x7-v0",
     entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
     kwargs={"size": 7},
 )
-print("MiniGrid-WallEnvReset-7x7-v0")
+logger.info("MiniGrid-WallEnvReset-7x7-v0")
 
 register(
     id="MiniGrid-WallEnvReset-8x8-v0",
     entry_point="pzero.zoo.wallenv_reset:WallEnvReset",
     kwargs={"size": 8},
 )
-print("MiniGrid-WallEnvReset-8x8-v0")
+logger.info("MiniGrid-WallEnvReset-8x8-v0")
 
 if __name__ == "__main__":
     env = WallEnvReset()

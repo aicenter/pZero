@@ -1,4 +1,5 @@
 import copy
+import logging
 from typing import List, Dict, Any, Tuple, Union, Optional
 
 import numpy as np
@@ -20,6 +21,8 @@ from lzero.policy import scalar_transform, InverseScalarTransform, cross_entropy
     DiscreteSupport, to_torch_float_tensor, mz_network_output_unpack, select_action, negative_cosine_similarity, \
     prepare_obs, configure_optimizers
 
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 @POLICY_REGISTRY.register('pomuzero')
 class POMuZeroPolicy(Policy):
@@ -358,6 +361,9 @@ class POMuZeroPolicy(Policy):
         if self._cfg.use_wandb:
             # TODO: add the model to wandb
             wandb.watch(self._learn_model.representation_network, log="all")
+        
+        # Initialize gradient step counter for monitoring
+        self._grad_step_counter = 0
 
     def _forward_learn(self, data: Tuple[torch.Tensor]) -> Dict[str, Union[float, int]]:
         """
@@ -376,16 +382,56 @@ class POMuZeroPolicy(Policy):
         self._target_model.train()
         if self._cfg.use_rnd_model:
             self._target_model_for_intrinsic_reward.train()
+            
+        # Initialize intermediate losses for logging
+        from collections import defaultdict
+        self.intermediate_losses = defaultdict(float)
 
         current_batch, target_batch = data
         obs_batch_ori, action_batch, mask_batch, indices, weights, make_time = current_batch
         target_reward, target_value, target_policy = target_batch
 
-        obs_batch, obs_target_batch = prepare_obs(obs_batch_ori, self._cfg)
-
+        # Special handling for recursive representation: preserve observation sequences  
+        if getattr(self._learn_model, 'use_recursive_representation', False):
+            # For recursive representation, we need the full observation sequence
+            # obs_batch_ori shape: [batch_size, sequence_length * obs_shape]
+            # We need to reshape it to: [batch_size, sequence_length, obs_shape]
+            batch_size = obs_batch_ori.shape[0]
+            obs_shape = self._cfg.model.observation_shape
+            frame_stack_num = self._cfg.model.frame_stack_num
+            num_unroll_steps = self._cfg.num_unroll_steps
+            
+            # Calculate total sequence length: stack frames + unroll steps
+            total_sequence_length = frame_stack_num + num_unroll_steps
+            
+            # Reshape from [batch_size, total_sequence_length * obs_shape] to [batch_size, total_sequence_length, obs_shape]
+            if obs_batch_ori.shape[1] >= total_sequence_length * obs_shape:
+                obs_batch_full_sequence = obs_batch_ori[:, :total_sequence_length * obs_shape]
+                obs_batch_full_sequence = obs_batch_full_sequence.reshape(batch_size, total_sequence_length, obs_shape)
+                
+                # Convert to tensor and move to device
+                obs_batch = torch.from_numpy(obs_batch_full_sequence).to(self._cfg.device).float()
+                obs_target_batch = None  # Not used in recursive representation
+                logger.debug(f"🔍 Debug: Recursive representation: Using full obs sequence {obs_batch.shape}")
+            else:
+                logger.warning(f"⚠️  Warning: Expected sequence length {total_sequence_length * obs_shape}, got {obs_batch_ori.shape[1]}")
+                # Fallback to standard approach
+                obs_batch, obs_target_batch = prepare_obs(obs_batch_ori, self._cfg)
+        else:
+            # Standard MuZero approach
+            obs_batch, obs_target_batch = prepare_obs(obs_batch_ori, self._cfg)
+        
         # do augmentations
         if self._cfg.use_augmentation:
-            obs_batch = self.image_transforms.transform(obs_batch)
+            if obs_batch.dim() == 3:  # Recursive representation case: [batch_size, seq_len, obs_shape]
+                # Apply augmentations to each timestep in the sequence
+                obs_batch_aug = []
+                for t in range(obs_batch.shape[1]):
+                    obs_batch_aug.append(self.image_transforms.transform(obs_batch[:, t]))
+                obs_batch = torch.stack(obs_batch_aug, dim=1)
+            else:  # Standard case: [batch_size, obs_shape]
+                obs_batch = self.image_transforms.transform(obs_batch)
+                
             if self._cfg.model.self_supervised_learning_loss:
                 obs_target_batch = self.image_transforms.transform(obs_target_batch)
 
@@ -416,10 +462,25 @@ class POMuZeroPolicy(Policy):
         # ==============================================================
         # the core initial_inference in MuZero policy.
         # ==============================================================
-        network_output = self._learn_model.initial_inference(obs_batch)
-
-        # value_prefix shape: (batch_size, 10), the ``value_prefix`` at the first step is zero padding.
-        latent_state, reward, value, policy_logits = mz_network_output_unpack(network_output)
+        if getattr(self._learn_model, 'use_recursive_representation', False):
+            # Debug: Check if we have proper observation sequences
+            logger.debug(f"🔍 Debug: obs_batch shape = {obs_batch.shape}")
+            logger.debug(f"🔍 Debug: action_batch shape = {action_batch.shape}")
+            
+            # For recursive representation, process sequences step by step
+            network_output, latent_states_sequence = self._process_recursive_representation_sequence(
+                obs_batch, action_batch, mask_batch, target_value_categorical, target_policy, target_reward_categorical
+            )
+            # Initial state for loss calculation
+            latent_state, reward, value, policy_logits = mz_network_output_unpack(network_output)
+            
+            # Debug: Check latent state statistics
+            logger.debug(f"🔍 Debug: Initial latent_state mean={latent_state.mean().item():.4f}, std={latent_state.std().item():.4f}")
+        else:
+            # Standard MuZero initial inference
+            network_output = self._learn_model.initial_inference(obs_batch)
+            latent_state, reward, value, policy_logits = mz_network_output_unpack(network_output)
+            latent_states_sequence = None
 
         # ========= logging for analysis =========
         # calculate dormant ratio of encoder
@@ -463,11 +524,23 @@ class POMuZeroPolicy(Policy):
         # the core recurrent_inference in MuZero policy.
         # ==============================================================
         for step_k in range(self._cfg.num_unroll_steps):
-            # unroll with the dynamics function: predict the next ``latent_state``, ``reward``,
-            # given current ``latent_state`` and ``action``.
-            # And then predict policy_logits and value with the prediction function.
-            network_output = self._learn_model.recurrent_inference(latent_state, action_batch[:, step_k])
-            latent_state, reward, value, policy_logits = mz_network_output_unpack(network_output)
+            if getattr(self._learn_model, 'use_recursive_representation', False) and latent_states_sequence is not None:
+                # For recursive representation, use pre-computed latent states from sequence processing
+                if step_k + 1 < len(latent_states_sequence):
+                    latent_state = latent_states_sequence[step_k + 1]
+                    # Still need to compute reward using dynamics network for training
+                    network_output = self._learn_model.recurrent_inference(latent_states_sequence[step_k], action_batch[:, step_k])
+                    _, reward, _, _ = mz_network_output_unpack(network_output)
+                    # Compute value and policy from latent state
+                    policy_logits, value = self._learn_model._prediction(latent_state)
+                else:
+                    # Fallback to standard recurrent inference if sequence is insufficient
+                    network_output = self._learn_model.recurrent_inference(latent_state, action_batch[:, step_k])
+                    latent_state, reward, value, policy_logits = mz_network_output_unpack(network_output)
+            else:
+                # Standard MuZero recurrent inference
+                network_output = self._learn_model.recurrent_inference(latent_state, action_batch[:, step_k])
+                latent_state, reward, value, policy_logits = mz_network_output_unpack(network_output)
 
             # ========= logging for analysis ===============
             if step_k == self._cfg.num_unroll_steps - 1 and self._cfg.cal_dormant_ratio:
@@ -500,18 +573,38 @@ class POMuZeroPolicy(Policy):
                 # calculate consistency loss for the next ``num_unroll_steps`` unroll steps.
                 # ==============================================================
                 if self._cfg.ssl_loss_weight > 0:
-                    # obtain the oracle latent states from representation function.
-                    beg_index, end_index = self._get_target_obs_index_in_step_k(step_k)
-                    network_output = self._learn_model.initial_inference(obs_target_batch[:, beg_index:end_index])
+                    if getattr(self._learn_model, 'use_recursive_representation', False):
+                        # For recursive representation, use obs_batch directly instead of obs_target_batch
+                        beg_index, end_index = self._get_target_obs_index_in_step_k(step_k)
+                        if step_k + 1 < obs_batch.shape[1]:  # Make sure we have enough sequence length
+                            # Use the observation at step_k+1 for consistency loss
+                            obs_for_consistency = obs_batch[:, step_k + 1]
+                            network_output = self._learn_model.initial_inference(obs_for_consistency)
 
-                    latent_state = to_tensor(latent_state)
-                    representation_state = to_tensor(network_output.latent_state)
+                            latent_state = to_tensor(latent_state)
+                            representation_state = to_tensor(network_output.latent_state)
 
-                    # NOTE: no grad for the representation_state branch
-                    dynamic_proj = self._learn_model.project(latent_state, with_grad=True)
-                    observation_proj = self._learn_model.project(representation_state, with_grad=False)
-                    temp_loss = negative_cosine_similarity(dynamic_proj, observation_proj) * mask_batch[:, step_k]
-                    consistency_loss += temp_loss
+                            # NOTE: no grad for the representation_state branch
+                            dynamic_proj = self._learn_model.project(latent_state, with_grad=True)
+                            observation_proj = self._learn_model.project(representation_state, with_grad=False)
+                            temp_loss = negative_cosine_similarity(dynamic_proj, observation_proj) * mask_batch[:, step_k]
+                            consistency_loss += temp_loss
+                        # If we don't have enough sequence, skip consistency loss for this step
+                    else:
+                        # Log debug info
+                        logger.debug(f"🔍 Debug: Using standard MuZero consistency loss calculation")
+                        # Standard MuZero consistency loss calculation
+                        beg_index, end_index = self._get_target_obs_index_in_step_k(step_k)
+                        network_output = self._learn_model.initial_inference(obs_target_batch[:, beg_index:end_index])
+
+                        latent_state = to_tensor(latent_state)
+                        representation_state = to_tensor(network_output.latent_state)
+
+                        # NOTE: no grad for the representation_state branch
+                        dynamic_proj = self._learn_model.project(latent_state, with_grad=True)
+                        observation_proj = self._learn_model.project(representation_state, with_grad=False)
+                        temp_loss = negative_cosine_similarity(dynamic_proj, observation_proj) * mask_batch[:, step_k]
+                        consistency_loss += temp_loss
 
             # NOTE: the target policy, target_value_categorical, target_reward_categorical is calculated in
             # game buffer now.
@@ -588,20 +681,19 @@ class POMuZeroPolicy(Policy):
         self._optimizer.zero_grad()
         weighted_total_loss.backward()
 
-        # ============= for analysis =============
-        if self._cfg.analysis_sim_norm:
-            del self.l2_norm_before
-            del self.l2_norm_after
-            del self.grad_norm_before
-            del self.grad_norm_after
-            self.l2_norm_before, self.l2_norm_after, self.grad_norm_before, self.grad_norm_after = self._learn_model.encoder_hook.analyze()
-            self._target_model.encoder_hook.clear_data()
-        # ============= for analysis =============
-
-        if self._cfg.multi_gpu:
-            self.sync_gradients(self._learn_model)
-        total_grad_norm_before_clip = torch.nn.utils.clip_grad_norm_(self._learn_model.parameters(),
-                                                                     self._cfg.grad_clip_value)
+        # Gradient clipping for recursive representation to prevent exploding gradients
+        if getattr(self._learn_model, 'use_recursive_representation', False):
+            # Clip gradients for recursive representation network specifically
+            if hasattr(self._learn_model, 'recursive_representation_network'):
+                torch.nn.utils.clip_grad_norm_(
+                    self._learn_model.recursive_representation_network.parameters(), 
+                    max_norm=2.0  # Relaxed from 1.0 to 2.0 for better learning
+                )
+        
+        # Standard gradient clipping for all parameters
+        total_grad_norm_before_clip = torch.nn.utils.clip_grad_norm_(
+            self._learn_model.parameters(), self._cfg.grad_clip_value
+        )
         self._optimizer.step()
         if self._cfg.piecewise_decay_lr_scheduler:
             self.lr_scheduler.step()
@@ -617,7 +709,15 @@ class POMuZeroPolicy(Policy):
             predicted_rewards = torch.stack(predicted_rewards).transpose(1, 0).squeeze(-1)
             predicted_rewards = predicted_rewards.reshape(-1).unsqueeze(-1)
 
-        return_log_dict = {
+        # Calculate update step (simple counter for monitoring)
+        grad_step = getattr(self, '_grad_step_counter', 0)
+        self._grad_step_counter = grad_step + 1
+
+        # Monitor gradients for recursive representation
+        if getattr(self._learn_model, 'use_recursive_representation', False):
+            self._monitor_recursive_repr_gradients()
+
+        info_dict = {
             'collect_mcts_temperature': self._collect_mcts_temperature,
             'collect_epsilon': self.collect_epsilon,
             'cur_lr': self._optimizer.param_groups[0]['lr'],
@@ -636,43 +736,42 @@ class POMuZeroPolicy(Policy):
             'predicted_rewards': predicted_rewards.mean().item(),
             'predicted_values': predicted_values.mean().item(),
             'total_grad_norm_before_clip': total_grad_norm_before_clip.item(),
-            # ==============================================================
-            # priority related
-            # ==============================================================
-            'value_priority': value_priority.mean().item(),
-            'value_priority_orig': value_priority,  # torch.tensor compatible with ddp settings
-
-            'analysis/dormant_ratio_encoder': self.dormant_ratio_encoder,
-            'analysis/dormant_ratio_dynamics': self.dormant_ratio_dynamics,
-            'analysis/latent_state_l2_norms': latent_state_l2_norms.item(),
-            'analysis/l2_norm_before': self.l2_norm_before,
-            'analysis/l2_norm_after': self.l2_norm_after,
-            'analysis/grad_norm_before': self.grad_norm_before,
-            'analysis/grad_norm_after': self.grad_norm_after,
+            'grad_step': grad_step,
         }
+
+        if self._cfg.use_priority:
+            info_dict.update({'priority_orig': value_priority, 'priority': value_priority.mean().item()})
+
+        info_dict.update(self.intermediate_losses)
+
+        return info_dict
+
+    def _monitor_recursive_repr_gradients(self):
+        """Monitor gradients in recursive representation network for debugging."""
+        if not hasattr(self._learn_model, 'recursive_representation_network'):
+            return
+            
+        total_norm = 0.0
+        param_count = 0
         
-        # ["harmony_dynamics", "harmony_policy", "harmony_value", "harmony_reward", "harmony_entropy"]
-        if self._cfg.model.harmony_balance:
-            harmony_dict = {
-                "harmony_dynamics": self.harmony_dynamics.item(), 
-                "harmony_dynamics_exp_recip": (1 / torch.exp(self.harmony_dynamics)).item(),
-                "harmony_policy": self.harmony_policy.item(),
-                "harmony_policy_exp_recip": (1 / torch.exp(self.harmony_policy)).item(),
-                "harmony_value": self.harmony_value.item(),
-                "harmony_value_exp_recip": (1 / torch.exp(self.harmony_value)).item(),
-                "harmony_reward": self.harmony_reward.item(),
-                "harmony_reward_exp_recip": (1 / torch.exp(self.harmony_reward)).item(),
-                "harmony_entropy": self.harmony_entropy.item(),
-                "harmony_entropy_exp_recip": (1 / torch.exp(self.harmony_entropy)).item(),
-            }
-            return_log_dict.update(harmony_dict)
+        for name, param in self._learn_model.recursive_representation_network.named_parameters():
+            if param.grad is not None:
+                param_norm = param.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+                param_count += 1
+                
+        if param_count > 0:
+            total_norm = total_norm ** (1. / 2)
+            logger.debug(f"🔍 Debug: Recursive repr gradient norm = {total_norm:.6f}")
+            
+            # Check for gradient issues
+            if total_norm < 1e-6:
+                logger.warning("⚠️  Warning: Very small gradients detected - potential vanishing gradient problem")
+            elif total_norm > 10.0:
+                logger.warning("⚠️  Warning: Large gradients detected - potential exploding gradient problem")
+        else:
+            logger.warning("⚠️  Warning: No gradients found in recursive representation network")
 
-        if self._cfg.use_wandb:
-            wandb.log({'learner_step/' + k: v for k, v in return_log_dict.items()}, step=self.env_step)
-            wandb.log({"learner_iter_vs_env_step": self.train_iter}, step=self.env_step)
-
-        return return_log_dict
-    
     def _init_collect(self) -> None:
         """
         Overview:
@@ -683,7 +782,12 @@ class POMuZeroPolicy(Policy):
             self._mcts_collect = MCTSCtree(self._cfg)
         else:
             self._mcts_collect = MCTSPtree(self._cfg)
-        self._collect_mcts_temperature = 1.
+        self._collect_mcts_temperature = 1
+        
+        # Initialize latent state tracking for recursive representation
+        self._latent_states = {}  # Dict[env_id, latent_state]
+        self._last_ready_env_id = None
+        self._episode_step_count = {}  # Track steps per environment.
         self.collect_epsilon = 0.0
         if self._cfg.model.model_type == 'conv_context':
             self.last_batch_obs = torch.zeros([8, self._cfg.model.observation_shape[0], 64, 64]).to(self._cfg.device)
@@ -732,12 +836,90 @@ class POMuZeroPolicy(Policy):
             ready_env_id = np.arange(active_collect_env_num)
         output = {i: None for i in ready_env_id}
         with torch.no_grad():
-            if self._cfg.model.model_type in ["conv", "mlp", "po_mlp"]:
-                # TODO: check for po_mlp
-                network_output = self._collect_model.initial_inference(data)
-            elif self._cfg.model.model_type == "conv_context":
-                network_output = self._collect_model.initial_inference(self.last_batch_obs, self.last_batch_action,
-                                                                       data)
+            # Handle recursive representation logic
+            if getattr(self._collect_model, 'use_recursive_representation', False):
+                # Check if we need to reset latent states
+                if self._should_reset_latent_states(ready_env_id, mode='collect'):
+                    self._reset_latent_states(mode='collect')
+                
+                # Convert ready_env_id to list if it's a set
+                ready_env_id_list = list(ready_env_id) if isinstance(ready_env_id, set) else ready_env_id
+                
+                # Determine which environments need initial vs observation inference
+                need_initial_inference = []
+                need_observation_inference = []
+                prev_latent_states_list = []
+                
+                for i, env_id in enumerate(ready_env_id_list):
+                    if env_id not in self._latent_states:
+                        # Environment needs initial inference (first time or after reset)
+                        need_initial_inference.append(i)
+                    else:
+                        # Environment has previous latent state, use observation inference
+                        need_observation_inference.append(i)
+                        prev_latent_states_list.append(self._latent_states[env_id])
+                
+                # Process initial inference environments
+                if need_initial_inference:
+                    initial_data = data[need_initial_inference]
+                    initial_output = self._collect_model.initial_inference(initial_data)
+                    
+                    # Store initial latent states
+                    for idx, env_idx in enumerate(need_initial_inference):
+                        env_id = ready_env_id_list[env_idx]
+                        self._latent_states[env_id] = initial_output.latent_state[idx].detach().cpu()
+                        self._episode_step_count[env_id] = 0
+                
+                # Process observation inference environments  
+                if need_observation_inference:
+                    obs_data = data[need_observation_inference]
+                    prev_latent_states = torch.stack(prev_latent_states_list).to(data.device)
+                    obs_output = self._collect_model.observation_inference(obs_data, prev_latent_states)
+                    
+                    # Update latent states
+                    for idx, env_idx in enumerate(need_observation_inference):
+                        env_id = ready_env_id_list[env_idx]
+                        self._latent_states[env_id] = obs_output.latent_state[idx].detach().cpu()
+                        self._episode_step_count[env_id] = self._episode_step_count.get(env_id, 0) + 1
+                
+                # Combine outputs for MCTS
+                if need_initial_inference and need_observation_inference:
+                    # Combine both outputs
+                    combined_latent_states = torch.zeros(len(ready_env_id_list), initial_output.latent_state.shape[-1])
+                    combined_policy_logits = torch.zeros(len(ready_env_id_list), initial_output.policy_logits.shape[-1])
+                    combined_values = torch.zeros(len(ready_env_id_list), initial_output.value.shape[-1])
+                    
+                    for idx, env_idx in enumerate(need_initial_inference):
+                        combined_latent_states[env_idx] = initial_output.latent_state[idx]
+                        combined_policy_logits[env_idx] = initial_output.policy_logits[idx]  
+                        combined_values[env_idx] = initial_output.value[idx]
+                    
+                    for idx, env_idx in enumerate(need_observation_inference):
+                        combined_latent_states[env_idx] = obs_output.latent_state[idx]
+                        combined_policy_logits[env_idx] = obs_output.policy_logits[idx]
+                        combined_values[env_idx] = obs_output.value[idx]
+                    
+                    # Create combined network output
+                    from lzero.model.common import MZNetworkOutput
+                    network_output = MZNetworkOutput(
+                        combined_values,
+                        [0. for _ in range(len(ready_env_id_list))],
+                        combined_policy_logits,
+                        combined_latent_states,
+                    )
+                elif need_initial_inference:
+                    network_output = initial_output
+                else:
+                    network_output = obs_output
+                    
+            else:
+                # Standard inference logic
+                if self._cfg.model.model_type in ["conv", "mlp", "po_mlp"]:
+                    # TODO: check for po_mlp
+                    network_output = self._collect_model.initial_inference(data)
+                elif self._cfg.model.model_type == "conv_context":
+                    network_output = self._collect_model.initial_inference(self.last_batch_obs, self.last_batch_action,
+                                                                           data)
 
             latent_state_roots, reward_roots, pred_values, policy_logits = mz_network_output_unpack(network_output)
 
@@ -841,6 +1023,80 @@ class POMuZeroPolicy(Policy):
             end_index = self._cfg.model.observation_shape * (step + self._cfg.model.frame_stack_num)
         return beg_index, end_index
 
+    def _process_recursive_representation_sequence(self, obs_batch, action_batch, mask_batch, 
+                                                   target_value_categorical, target_policy, target_reward_categorical):
+        """
+        Overview:
+            Process a sequence of observations using recursive representation network.
+            For recursive representation training, we need to process actual observation sequences
+            rather than dynamics-based sequences.
+        Arguments:
+            - obs_batch: batch of stacked observations [batch_size, sequence_length, obs_shape]
+            - action_batch: batch of action sequences  
+            - mask_batch: batch of mask sequences
+            - target_value_categorical, target_policy, target_reward_categorical: target sequences
+        Returns:
+            - initial_network_output: network output for the first step
+            - latent_states_sequence: sequence of latent states built from observations
+        """
+        batch_size = obs_batch.size(0)
+        
+        # For recursive representation, we need observation sequences
+        # obs_batch should be [batch_size, sequence_length, obs_shape] 
+        # where sequence_length = num_unroll_steps + 1
+        
+        if obs_batch.dim() == 2:
+            # If obs_batch is 2D, it means we only have the initial observation
+            # This is a limitation - we need full observation sequences for recursive representation
+            logger.warning("⚠️  Warning: Recursive representation needs observation sequences, but only initial obs provided")
+            logger.warning("⚠️  Falling back to dynamics-based sequence (suboptimal for recursive representation)")
+            
+            # Fallback to dynamics-based approach
+            initial_network_output = self._learn_model.initial_inference(obs_batch)
+            latent_state = initial_network_output.latent_state
+            latent_states_sequence = [latent_state]
+            
+            for step in range(self._cfg.num_unroll_steps):
+                network_output = self._learn_model.recurrent_inference(latent_state, action_batch[:, step])
+                latent_state = network_output.latent_state
+                latent_states_sequence.append(latent_state)
+                
+            return initial_network_output, latent_states_sequence
+        
+        # Proper recursive representation processing with observation sequences
+        sequence_length = obs_batch.size(1)
+        expected_length = self._cfg.num_unroll_steps + 1
+        
+        if sequence_length < expected_length:
+            logger.warning(f"⚠️  Warning: Observation sequence length ({sequence_length}) < expected ({expected_length})")
+            logger.warning("⚠️  Truncating num_unroll_steps for this batch")
+            actual_unroll_steps = sequence_length - 1
+        else:
+            actual_unroll_steps = self._cfg.num_unroll_steps
+        
+        latent_states_sequence = []
+        
+        # Step 1: Initial inference on first observation
+        first_obs = obs_batch[:, 0]  # [batch_size, obs_shape]
+        initial_network_output = self._learn_model.initial_inference(first_obs)
+        current_latent_state = initial_network_output.latent_state
+        latent_states_sequence.append(current_latent_state)
+        
+        # Step 2: Use recursive representation for subsequent observations
+        for step in range(actual_unroll_steps):
+            next_obs = obs_batch[:, step + 1]  # [batch_size, obs_shape]
+            
+            # Use observation_inference to get next latent state
+            obs_output = self._learn_model.observation_inference(next_obs, current_latent_state)
+            current_latent_state = obs_output.latent_state
+            latent_states_sequence.append(current_latent_state)
+        
+        # Pad sequence if needed
+        while len(latent_states_sequence) < expected_length:
+            latent_states_sequence.append(latent_states_sequence[-1])
+        
+        return initial_network_output, latent_states_sequence
+
     def _init_eval(self) -> None:
         """
         Overview:
@@ -851,12 +1107,101 @@ class POMuZeroPolicy(Policy):
             self._mcts_eval = MCTSCtree(self._cfg)
         else:
             self._mcts_eval = MCTSPtree(self._cfg)
+            
+        # Initialize latent state tracking for recursive representation
+        self._eval_latent_states = {}  # Dict[env_id, latent_state]
+        self._eval_last_ready_env_id = None
+        self._eval_episode_step_count = {}  # Track steps per environment
         if self._cfg.model.model_type == 'conv_context':
             self.last_batch_obs = torch.zeros([3, self._cfg.model.observation_shape[0], 64, 64]).to(self._cfg.device)
             self.last_batch_action = [-1 for _ in range(3)]
         # elif self._cfg.model.model_type == 'mlp_context':
         #     self.last_batch_obs = torch.zeros([3, self._cfg.model.observation_shape]).to(self._cfg.device)
         #     self.last_batch_action = [-1 for _ in range(3)]
+
+    def _should_reset_latent_states(self, ready_env_id, mode='collect'):
+        """
+        Overview:
+            Check if we should reset latent states. This happens when:
+            1. First time running
+            2. Different set of environments are ready
+            3. Any environment has reset (episode boundary)
+        Arguments:
+            - ready_env_id (:obj:`np.array`): The IDs of environments ready to step
+            - mode (:obj:`str`): Either 'collect' or 'eval'
+        Returns:
+            - should_reset (:obj:`bool`): Whether to reset latent states
+        """
+        if not getattr(self._collect_model, 'use_recursive_representation', False):
+            return False
+            
+        attr_prefix = '_eval_' if mode == 'eval' else '_'
+        last_ready_attr = f'{attr_prefix}last_ready_env_id'
+        
+        # First time running
+        if getattr(self, last_ready_attr) is None:
+            return True
+            
+        # Check if environment set has changed
+        last_ready = getattr(self, last_ready_attr)
+        if set(ready_env_id) != set(last_ready):
+            return True
+            
+        return False
+
+    def _reset_latent_states(self, env_ids=None, mode='collect'):
+        """
+        Overview:
+            Reset latent states for given environments or all environments
+        Arguments:
+            - env_ids (:obj:`list`): List of environment IDs to reset. If None, reset all.
+            - mode (:obj:`str`): Either 'collect' or 'eval'
+        """
+        if not getattr(self._collect_model, 'use_recursive_representation', False):
+            return
+            
+        attr_prefix = '_eval_' if mode == 'eval' else '_'
+        latent_states_attr = f'{attr_prefix}latent_states'
+        step_count_attr = f'{attr_prefix}episode_step_count'
+        
+        latent_states = getattr(self, latent_states_attr)
+        step_count = getattr(self, step_count_attr)
+        
+        if env_ids is None:
+            latent_states.clear()
+            step_count.clear()
+        else:
+            for env_id in env_ids:
+                latent_states.pop(env_id, None)
+                step_count.pop(env_id, None)
+
+    def _update_stored_latent_states(self, network_outputs, ready_env_id, mode='collect'):
+        """
+        Overview:
+            Update stored latent states with new network outputs
+        Arguments:
+            - network_outputs (:obj:`MZNetworkOutput`): The network outputs containing new latent states
+            - ready_env_id (:obj:`np.array`): The IDs of environments that were processed
+            - mode (:obj:`str`): Either 'collect' or 'eval'
+        """
+        if not getattr(self._collect_model, 'use_recursive_representation', False):
+            return
+            
+        attr_prefix = '_eval_' if mode == 'eval' else '_'
+        latent_states_attr = f'{attr_prefix}latent_states'
+        step_count_attr = f'{attr_prefix}episode_step_count'
+        last_ready_attr = f'{attr_prefix}last_ready_env_id'
+        
+        latent_states = getattr(self, latent_states_attr)
+        step_count = getattr(self, step_count_attr)
+        
+        # Update latent states and step counts
+        for i, env_id in enumerate(ready_env_id):
+            latent_states[env_id] = network_outputs.latent_state[i].detach().cpu()
+            step_count[env_id] = step_count.get(env_id, 0) + 1
+            
+        # Update last ready env id
+        setattr(self, last_ready_attr, ready_env_id.copy())
 
     def _forward_eval(self, data: torch.Tensor, action_mask: list, to_play: List = [-1],
                       ready_env_id: np.array = None, **kwargs) -> Dict:
@@ -973,6 +1318,7 @@ class POMuZeroPolicy(Policy):
                 self._cfg.device
             )
             self.last_batch_action = [-1 for _ in range(self._cfg.evaluator_env_num)]
+
     def _monitor_vars_learn(self) -> List[str]:
         """
         Overview:

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from minigrid.core.grid import Grid
 from minigrid.core.mission import MissionSpace
 from minigrid.core.world_object import Door, Goal, Key
 from minigrid.minigrid_env import MiniGridEnv
 
 from gymnasium.envs.registration import register
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 class WallEnv(MiniGridEnv):
 
@@ -103,7 +107,7 @@ register(
     entry_point="pzero.zoo.wallenv:WallEnv",
     kwargs={"size": 5},
 )
-print("MiniGrid-WallEnv-5x5-v0")
+logger.info("MiniGrid-WallEnv-5x5-v0")
 
 if __name__ == "__main__":
     env = WallEnv()
