@@ -1,81 +1,61 @@
+# pZero - an attempt at implementing MuZero for POMDPs
 
-- mapa -> obrazek
+See the report for the plan.
 
+# Installation
+After failures with previous packages, I am using LightZero in this attempt, which is a framework that contains multiple implementations of MuZero, is actively maintained, documented and can be installed.
 
-When training:
+- Install with Python3.11
 
-Monitor Key Metrics:
-- Episode Return/Reward: The primary indicator of performance. Is it increasing?
-- Losses: Value loss, policy loss, reward loss (for the model), and SSL loss. Are they decreasing? Are they stable or fluctuating wildly?
-- Exploration: How many unique states is the agent visiting? (This might require custom logging).
+Via uv install:
 
+```bash
+uv venv
+source .venv/bin/activate
+uv init
+uv add --editable ./LightZero
+uv add --editable minigrid==2.2.1 # this is the version of minigrid that is compatible with lightzero
 
-I set up tensorboard and I am looking at my metrics now. There are these tabs:
-- Buffer
-- collector_iter
-- collector_step
-- evaluator_iter
-- evaluator_step
-- learner_iter
-- learner_step
-
-
-## MuZero
-
-### Consistency loss = Self-supervised learning loss
-In LightZero, unlike in the original paper, the MuZero has added the consistency loss to the loss function, that enforces agreement between two different pathways for obtaining latent state representations:
-- Dynamics Pathway: Latent states obtained by unrolling the dynamics network (predicting next states from current state + action)
-- Representation Pathway: Latent states obtained directly from the representation network (encoding future observations)
-
-In the config, the weight of the consistency loss is controlled by `ssl_loss_weight`.
+uv pip install -e . # install the project in the venv, so that e.g. environments can be imported
+```
 
 
-## Minigrid
+Also installed, but not strictly necessary:
 
-Observations are dictionaries containing:
-     - an image (partially observable view of the environment)
-     - the agent's direction/orientation (acting as a compass)
-     - a textual mission string (instructions for the agent)
+```bash
+UV add numba
+uv add pyecharts
+uv add transformers
+```
 
-Image observations are tensors of shape (agent_view_size, agent_view_size, 3), (7,7,3) by default.
+On `uv run LightZero/zoo/classic_control/cartpole/config/cartpole_muzero_config.py` I saw a speedup from 244s to 57s
 
-Each cell is encoded as 3-dimensional tuple: (OBJECT_IDX, COLOR_IDX, STATE)
+## Tools and such
 
-The encoding uses three constant mappings defined in constants.py:
-Object Types (OBJECT_TO_IDX):
-0: unseen (cells not visible to agent)
-1: empty (empty floor space)
-2: wall
-3: floor
-4: door
-5: key
-6: ball
-7: box
-8: goal
-9: lava
-10: agent
-Colors (COLOR_TO_IDX):
-0: red
-1: green
-2: blue
-3: purple
-4: yellow
-5: grey
-States (STATE_TO_IDX):
-0: open (for doors)
-1: closed (for doors)
-2: locked (for doors)
-3. Direction Encoding
-The direction field encodes the agent's orientation as an integer:
-0: Pointing right (positive X)
-1: Down (positive Y)
-2: Pointing left (negative X)
-3: Up (negative Y)
+- VS code offered to install tensorboard plugin, after installing `uv add torchvision` it loaded all logs and run within VS code. Neat!
+- Code navigation (go to definition (F12)) was not working with lightzero functions (installed as editable from local directory). There was an easy fix, going to settings and changing python.languageServer to Jedi. This fixed it.
 
+# Project structure and implementation
 
+I was trying to follow the structure of the lightzero project. I would usually start by copying the entrypoint from LightZero, such as `LightZero/zoo/minigrid/config/minigrid_muzero_config.py`, and modifying to first run, and then modifying it to my needs. If I needed to modify parts of the environment or the model, I would first copy them over, change them to make sure they work, and then modify them. That is how most of the files in `src/pzero` were created.
 
+```
+pzero/
+├── .venv
+├── data
+├── LightZero
+├── Minigrid
+├── scripts       # scripts for running the experiments from CLI
+└── src/
+    ├── pzero/    # pzero code
+    │   └── zoo   # configs, minigrid environments, lightzero environments
+    └── test      # test scripts
+```
 
+To run pZero, you can use the scripts in the `scripts` directory. For example, to run pZero on the registered `MiniGrid-WallEnvReset-5x5-v0` environment with debug-level logging, you can use the command:
 
+```bash
+uv run ./scripts/run_pomuzero_recursive_minigrid.py --env-id MiniGrid-WallEnvReset-5x5-v0 --log-level DEBUG
+```
 
-
-## Prompts:
+This script is just a CLI wrapper around the `/home/mrkosja1/pZero/src/pzero/zoo/pomuzero_recursive_minigrid_config.py` file, which is the main entry point, and which can be run also directly. 
