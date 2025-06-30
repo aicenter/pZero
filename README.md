@@ -28,7 +28,7 @@ uv add pyecharts
 uv add transformers
 ```
 
-On `uv run LightZero/zoo/classic_control/cartpole/config/cartpole_muzero_config.py` I saw a speedup from 244s to 57s
+After adding numba, `uv run LightZero/zoo/classic_control/cartpole/config/cartpole_muzero_config.py` I saw a speedup from 244s to 57s
 
 ## Tools and such
 
@@ -62,4 +62,11 @@ uv run ./scripts/run_pomuzero_recursive_minigrid.py --env-id MiniGrid-WallEnvRes
 ```
 
 This script is just a CLI wrapper around the `/home/mrkosja1/pZero/src/pzero/zoo/pomuzero_recursive_minigrid_config.py` file, which is the main entry point, and which can be run also directly. 
+
+The scripts generate logs in the `data` directory. These logs can be viewed with tensorboard, and the logs contain also the model checkpoints and gifs of the agent's behavior in the episodes. 
+
+## State of things and next steps
+I have merged everything into the `main` branch. The commit ["Attempt at recursive representation, not learning"](https://github.com/aicenter/pZero/commit/97b77b4b70ea8f42e9fd52614a449b7410d488c3) contains attempt at recursive representation network, which is not learning anything. This is one thick commit, and it may be better to start just before it from scratch, where I am somewhat confident things work as intended. 
+
+
 
