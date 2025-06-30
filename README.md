@@ -35,9 +35,12 @@ On `uv run LightZero/zoo/classic_control/cartpole/config/cartpole_muzero_config.
 - VS code offered to install tensorboard plugin, after installing `uv add torchvision` it loaded all logs and run within VS code. Neat!
 - Code navigation (go to definition (F12)) was not working with lightzero functions (installed as editable from local directory). There was an easy fix, going to settings and changing python.languageServer to Jedi. This fixed it.
 
+## Development
+I was using VS code for remote development on the game theory group server. To be able to use git, I set up ssh-agent forwarding. To get the tensorboard to work, I ran tensorboard inside tmux on the server, and forwarded the tensorboard port to my browser.
+
 # Project structure and implementation
 
-I was trying to follow the structure of the lightzero project. I would usually start by copying the entrypoint from LightZero, such as `LightZero/zoo/minigrid/config/minigrid_muzero_config.py`, and modifying to first run, and then modifying it to my needs. If I needed to modify parts of the environment or the model, I would first copy them over, change them to make sure they work, and then modify them. That is how most of the files in `src/pzero` were created.
+I was trying to follow the structure of the lightzero project. I would usually start by copying the entrypoint from LightZero, such as `LightZero/zoo/minigrid/config/minigrid_muzero_config.py`, and modifying to first run, and then modifying it to my needs. If I needed to modify parts of the environment or the model, I would first copy them over, change them to make sure they work, and then modify them. That is how most of the files in `src/pzero` were created. I did a small change to the LightZero, it is a single commit in the LightZero [fork](https://github.com/aicenter/LightZero/tree/pZero).
 
 ```
 pzero/
@@ -59,3 +62,4 @@ uv run ./scripts/run_pomuzero_recursive_minigrid.py --env-id MiniGrid-WallEnvRes
 ```
 
 This script is just a CLI wrapper around the `/home/mrkosja1/pZero/src/pzero/zoo/pomuzero_recursive_minigrid_config.py` file, which is the main entry point, and which can be run also directly. 
+
